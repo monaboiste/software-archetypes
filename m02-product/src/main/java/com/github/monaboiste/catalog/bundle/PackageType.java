@@ -8,9 +8,12 @@ import com.github.monaboiste.catalog.product.ProductMetadata;
 import com.github.monaboiste.catalog.product.ProductName;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * A composite product that bundles multiple product types under shared selection rules.
@@ -128,6 +131,44 @@ public final class PackageType implements Product {
         public Builder withSelectionRule(SelectionRule rule) {
             this.selectionRules.add(rule);
             return this;
+        }
+
+        // ---------------------------------------------------------------------
+        // Fluent choice helpers — each registers the set AND its matching rule
+        // in one call, eliminating the "create set → register → add rule" triple.
+        // Use withProductSet/withSelectionRule for conditional or cross-set rules.
+        // ---------------------------------------------------------------------
+
+        /**
+         * Adds a product set and requires that between {@code min} and {@code max} products
+         * from it (inclusive) are selected.
+         */
+        public Builder withChoice(String name, int min, int max, ProductIdentifier... products) {
+            ProductSet set = new ProductSet(name, new HashSet<>(Arrays.asList(products)));
+            this.productSets.put(set.name(), set);
+            this.selectionRules.add(SelectionRule.isSubsetOf(set, min, max));
+            return this;
+        }
+
+        /**
+         * Adds a product set and requires exactly one product from it to be selected.
+         */
+        public Builder withSingleChoice(String name, ProductIdentifier... products) {
+            return withChoice(name, 1, 1, products);
+        }
+
+        /**
+         * Adds a product set and requires at least one product from it to be selected.
+         */
+        public Builder withRequiredChoice(String name, ProductIdentifier... products) {
+            return withChoice(name, 1, Integer.MAX_VALUE, products);
+        }
+
+        /**
+         * Adds a product set and allows zero or one product from it to be selected.
+         */
+        public Builder withOptionalChoice(String name, ProductIdentifier... products) {
+            return withChoice(name, 0, 1, products);
         }
 
         public PackageType build() {
