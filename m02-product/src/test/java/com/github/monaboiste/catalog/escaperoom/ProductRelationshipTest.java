@@ -118,4 +118,38 @@ class ProductRelationshipTest {
                 r.from().equals(EscapeRoomCatalog.ID_CYBERPUNK_2077)
                         && r.to().equals(EscapeRoomCatalog.ID_ALCATRAZ));
     }
+
+    @Test
+    void cyberpunk_is_incompatible_with_other_rooms() {
+        // Cyberpunk 2077 is Warsaw-only and needs a 90-min VR slot, so it cannot be combined
+        // with the other rooms in one Team-Building session. INCOMPATIBLE_WITH edges are soft
+        // hints (eventual consistency, per L07) — they guide the booking engine, not hard locks.
+        List<ProductRelationship> incompatible = EscapeRoomCatalog.relationships().stream()
+                .filter(r -> r.type() == ProductRelationshipType.INCOMPATIBLE_WITH)
+                .toList();
+
+        assertThat(incompatible)
+                .extracting(ProductRelationship::from)
+                .containsOnly(EscapeRoomCatalog.ID_CYBERPUNK_2077);
+
+        assertThat(incompatible)
+                .extracting(ProductRelationship::to)
+                .containsExactlyInAnyOrder(
+                        EscapeRoomCatalog.ID_EGYPTIAN_TOMB,
+                        EscapeRoomCatalog.ID_MAD_SCIENTIST_LAB,
+                        EscapeRoomCatalog.ID_ALCATRAZ);
+    }
+
+    @Test
+    void incompatible_relationship_is_directed_not_auto_reversed() {
+        // "Cyberpunk INCOMPATIBLE_WITH Alcatraz" is explicit; there is no automatic reverse.
+        // Symmetric incompatibility can be expressed by adding a second edge; it is not inferred.
+        List<ProductRelationship> incompatible = EscapeRoomCatalog.relationships().stream()
+                .filter(r -> r.type() == ProductRelationshipType.INCOMPATIBLE_WITH)
+                .toList();
+
+        assertThat(incompatible).noneMatch(r ->
+                r.from().equals(EscapeRoomCatalog.ID_ALCATRAZ)
+                        && r.to().equals(EscapeRoomCatalog.ID_CYBERPUNK_2077));
+    }
 }

@@ -8,46 +8,21 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Task point 4 — ApplicabilityConstraints for Cyberpunk 2077 and Hardcore.
+ * Task point 4 — ApplicabilityConstraints placed on product types for intrinsic rules.
  *
- * <p>Shows that the product itself answers "am I applicable here?" — no controller logic, no SQL
- * filter, no frontend guard needed. The context is a flat map that travels across service
- * boundaries and can be built from HTTP headers, JWT claims, or a booking form.
+ * <p>Shows that the product itself answers "am I applicable here?" for safety and legal
+ * constraints — no controller logic, no SQL filter, no frontend guard needed.
+ *
+ * <p>Following L08: constraints that belong to the product's identity (health declaration,
+ * legal age) live here on the {@link com.github.monaboiste.catalog.product.ProductType}.
+ * Constraints that belong to the sales context (city, channel, day-of-week) live on the
+ * {@link com.github.monaboiste.catalog.catalog.CatalogEntry} — see {@link CatalogEntryTest}.
  */
 class ApplicabilityConstraintTest {
 
-    @Test
-    void cyberpunk_available_only_in_warsaw_with_vr() {
-        ApplicabilityContext warsawWithVr = ApplicabilityContext.of(Map.of(
-                "city",           "Warsaw",
-                "hasVrEquipment", "true",
-                "age",            "25"
-        ));
-
-        assertThat(EscapeRoomCatalog.CYBERPUNK_2077.isApplicableFor(warsawWithVr)).isTrue();
-    }
-
-    @Test
-    void cyberpunk_not_available_outside_warsaw() {
-        // VR equipment is only installed in Warsaw — other cities cannot offer this room.
-        ApplicabilityContext cracowWithVr = ApplicabilityContext.of(Map.of(
-                "city",           "Cracow",
-                "hasVrEquipment", "true"
-        ));
-
-        assertThat(EscapeRoomCatalog.CYBERPUNK_2077.isApplicableFor(cracowWithVr)).isFalse();
-    }
-
-    @Test
-    void cyberpunk_not_available_in_warsaw_without_vr_equipment() {
-        // Both conditions must be true — city AND VR availability.
-        ApplicabilityContext warsawNoVr = ApplicabilityContext.of(Map.of(
-                "city",           "Warsaw",
-                "hasVrEquipment", "false"
-        ));
-
-        assertThat(EscapeRoomCatalog.CYBERPUNK_2077.isApplicableFor(warsawNoVr)).isFalse();
-    }
+    // -------------------------------------------------------------------------
+    // Alcatraz — intrinsic safety constraint (stays on ProductType)
+    // -------------------------------------------------------------------------
 
     @Test
     void alcatraz_is_available_for_guests_without_claustrophobia() {
@@ -61,13 +36,18 @@ class ApplicabilityConstraintTest {
     @Test
     void alcatraz_unavailable_for_claustrophobic_guests() {
         // Guest self-declares claustrophobia — the room rejects the booking applicability.
-        // This is a legal/safety constraint, not a product variant.
+        // This is a safety constraint intrinsic to the room itself, not a sales-context rule:
+        // no catalog would ever offer Alcatraz to claustrophobic guests regardless of city.
         ApplicabilityContext claustrophobic = ApplicabilityContext.of(Map.of(
                 "claustrophobia", "true"
         ));
 
         assertThat(EscapeRoomCatalog.ALCATRAZ.isApplicableFor(claustrophobic)).isFalse();
     }
+
+    // -------------------------------------------------------------------------
+    // Hardcore package — intrinsic legal constraint (stays on PackageType)
+    // -------------------------------------------------------------------------
 
     @Test
     void hardcore_available_only_for_adults() {
@@ -90,21 +70,5 @@ class ApplicabilityConstraintTest {
         ApplicabilityContext noAge = ApplicabilityContext.of(Map.of("city", "Warsaw"));
 
         assertThat(EscapeRoomCatalog.HARDCORE.isApplicableFor(noAge)).isFalse();
-    }
-
-    @Test
-    void actor_available_on_weekends() {
-        ApplicabilityContext saturday = ApplicabilityContext.of(Map.of("dayType", "Saturday"));
-        ApplicabilityContext sunday   = ApplicabilityContext.of(Map.of("dayType", "Sunday"));
-
-        assertThat(EscapeRoomCatalog.ACTOR.isApplicableFor(saturday)).isTrue();
-        assertThat(EscapeRoomCatalog.ACTOR.isApplicableFor(sunday)).isTrue();
-    }
-
-    @Test
-    void actor_not_available_on_weekdays() {
-        ApplicabilityContext monday = ApplicabilityContext.of(Map.of("dayType", "Monday"));
-
-        assertThat(EscapeRoomCatalog.ACTOR.isApplicableFor(monday)).isFalse();
     }
 }
