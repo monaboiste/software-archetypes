@@ -68,13 +68,15 @@ integrate around a shared language instead of translating their own concepts bet
 
 ### M02L04 — Product identifiability and tracking
 
-Not all products live the same way. Some are unique, others are individually tracked, others are tracked by
-batch, and others are tracked only by quantity. The model introduces `ProductTrackingStrategy`:
+Not all products live the same way. Some are unique, others are individually tracked, tracked by batch, tracked
+both ways, or treated as interchangeable. The model introduces `ProductTrackingStrategy`:
 
 - `UNIQUE`: a single special specimen exists, e.g. a work of art or a collector's rarity.
 - `INDIVIDUALLY_TRACKED`: each specimen has its own identity, e.g. a phone, a car, a loan agreement.
 - `BATCH_TRACKED`: we track the batch, not each individual unit, e.g. milk, medicine, a goods delivery.
-- `QUANTITY_TRACKED`: we track the quantity, e.g. rice, energy, consulting hours.
+- `INDIVIDUALLY_AND_BATCH_TRACKED`: each specimen and its batch matter, e.g. a TV with a serial number and
+  production batch.
+- `IDENTICAL`: specimens are interchangeable and tracked through quantity, e.g. rice or energy.
 
 Every product is also measurable. Goods are measured in units, milk in litres, rice in kilograms, consulting
 in hours, hotel stays in nights. Therefore `ProductType` should know the preferred unit of measure, and
@@ -82,8 +84,8 @@ in hours, hotel stays in nights. Therefore `ProductType` should know the preferr
 and unit cannot be arbitrary.
 
 The lesson also emphasises the role of identifiers: `ProductIdentifier` says what the product is,
-`SerialNumber` says which specimen, `BatchId` says which batch, and `ProductInstanceId` technically ties a
-specific instance together.
+`SerialNumber` says which specimen, `BatchId` technically identifies a batch, and `ProductInstanceId` ties a
+specific instance together. A batch can additionally have a business-facing `BatchName`, e.g. `LOT-2024-001`.
 
 ### M02L05 — Variants, configurations, and differentiation
 
@@ -95,6 +97,10 @@ T-shirt colour, deposit term, deposit amount, appointment date, batch code.
 
 `ProductFeatureInstance` is a concrete feature value for a specific product instance. Examples: red colour,
 size M, 12-month deposit, PLN 50,000.
+
+`ProductFeatureInstances` validates the whole configuration against `ProductType`: mandatory features must be
+present and undeclared features are rejected. For example, a deposit requires `amount` and `term`, and cannot
+contain an unknown `channel=phone` value.
 
 Constraints give features their semantics. Example types:
 
@@ -128,6 +134,9 @@ Sometimes, however, one catalog entry can point to multiple product types if fro
 are a single experience, e.g. "45-minute relaxation massage" that may operationally be fulfilled by several
 different types of massage.
 
+The two entry points reflect the separation: `ProductFacade` defines product types and their features, while
+`ProductCatalog` publishes, withdraws, and searches commercial offers.
+
 ### M02L07 — Relationships between products
 
 Products rarely live in isolation. They can complement, exclude, substitute, be compatible with each other, or
@@ -152,8 +161,8 @@ independent entity with their own repository. This keeps `ProductType` lean, and
 be maintained independently. Since many relationships are catalog, recommendation, or sales-oriented,
 eventual consistency often suffices.
 
-Creating relationships should pass through a factory and domain policies, e.g. a ban on upgrade cycles, a ban
-on a product relating to itself, or restricting compatibility to the same product series.
+Creating relationships should pass through a factory and domain policies, e.g. blocking reverse upgrades,
+preventing graph cycles, or restricting compatibility to the same product series.
 
 ### M02L08 — Product applicability conditions
 
@@ -183,15 +192,18 @@ The lesson introduces `PackageType`, `ProductSet`, `SelectionRule`, and `Package
 `ProductSet` is a group of equivalent options, e.g. one of the tariff plans, one of the insurance options, up
 to two accessories. `SelectionRule` specifies how to choose from the group: exactly one, zero or one, at least
 one, up to two, or a conditional rule such as "if international transport is selected, standard insurance is
-not allowed".
+not allowed". Rules can be composed with `and`, `or`, and `not`.
 
 The most important structural pattern is Composite. `ProductType` and `PackageType` are different
 implementations of the shared contract `Product`. This allows a package to contain products and other packages,
 while the catalog, relationships, search, and rules can operate on them consistently.
 
-`PackageInstance` is the real-world realisation of a package. It contains the selected product or package
-instances. For validation it reduces `SelectedInstance` to `SelectedProduct` — it moves from the level of
-concrete specimens to the level of definitions and checks conformance with `PackageType` rules.
+Definitions share one creation flow: `Product.builder(...).asProductType(...)` creates a regular product, while
+`Product.builder(...).asPackage()` creates a package.
+
+At the instance level, `ProductInstance` and `PackageInstance` implement the shared `Instance` contract.
+`PackageInstance` contains selected instances and reduces `SelectedInstance` to `SelectedProduct` for validation
+against `PackageType` rules.
 
 ### M02L10 — Intangible and service products
 
@@ -279,7 +291,7 @@ bank product and a customer agreement.
 
 ### 3. Explicit product tracking strategy
 
-**Problem:** the system does not know whether to track a unit, a batch, a quantity, or a unique item.
+**Problem:** the system does not know whether to track a unit, a batch, both, or only an interchangeable quantity.
 
 **Pattern:** assign `ProductTrackingStrategy` to `ProductType` and enforce it when creating instances.
 
@@ -287,10 +299,11 @@ bank product and a customer agreement.
 
 - Phone: individually tracked by serial number.
 - Milk: tracked by production batch.
-- Rice: quantity tracking.
+- TV: tracked by both serial number and production batch.
+- Rice: interchangeable specimens measured by quantity.
 - Collector's guitar: unique.
 
-**Effect:** the model itself enforces whether a `SerialNumber`, `BatchId`, or quantity is required.
+**Effect:** the model itself enforces whether a `SerialNumber`, `BatchId`, both identifiers, or quantity is required.
 
 ### 4. Unit of measure as part of the product definition
 
@@ -312,11 +325,13 @@ consistent with that definition.
 
 **Problem:** every new feature means a column, a field, a migration, and a deploy.
 
-**Pattern:** define features via `ProductFeatureType` and concrete values via `ProductFeatureInstance`.
+**Pattern:** define features via `ProductFeatureType`, concrete values via `ProductFeatureInstance`, and validate
+their completeness through `ProductFeatureInstances`.
 
 **Examples:**
 
 - Deposit: amount, term, channel, customer segment.
+- Deposit instance: mandatory amount and term, with no undeclared features.
 - T-shirt: colour, size, material.
 - Shipment: weight, dimensions, fragile, oversize.
 - Medical test: duration, specialisation, test type.
@@ -374,6 +389,9 @@ Deposit 7.5% Online" only until the end of March.
 
 **Effect:** marketing can change campaigns and visibility without touching the product definition.
 
+`ProductFacade` is the entry point for definitions; `ProductCatalog` is the entry point for publishing,
+withdrawing, and searching offers.
+
 ### 9. Relationships as first-class entities
 
 **Problem:** dependencies between products are hidden in fields, if-statements, or documentation.
@@ -400,7 +418,7 @@ combination makes no sense".
 **Example policies:**
 
 - Prohibit a product relating to itself.
-- Prohibit cycles in upgrade relationships.
+- Prohibit a direct reverse upgrade; arbitrary cycles require traversing the relationship graph.
 - Compatibility only within the same equipment series.
 - Maximum number of cross-sell add-ons.
 
@@ -441,7 +459,8 @@ from a campaign, channel, or catalog, place it in `CatalogEntry`.
 **Problem:** a package is implemented as fields `creditCardId`, `insurancePolicyId`, `notificationId` bolted
 onto the base product.
 
-**Pattern:** use `PackageType`, `ProductSet`, and `SelectionRule`.
+**Pattern:** use `PackageType`, `ProductSet`, and composable `SelectionRule` objects such as `ifThen`, `and`,
+`or`, and `not`.
 
 **Example:** `Transport Premium` consists of:
 
@@ -464,15 +483,18 @@ onto the base product.
 **Example:** an office package can contain a laptop, a monitor, Office 365, and antivirus, and a larger package
 can contain entire smaller packages.
 
-**Effect:** the system can treat products and packages consistently, while each type has only the data and
-behaviour that makes sense for it.
+Both definitions start with `Product.builder(...)`, followed by `asProductType(...)` or `asPackage()`.
 
-### 15. PackageInstance as package realisation
+**Effect:** the system can treat products and packages consistently, while each type has only the data and
+behaviour that makes sense for it. Catalog and relationship APIs should therefore refer to `Product`, not only
+to `ProductType`.
+
+### 15. Shared Instance contract and package realisation
 
 **Problem:** package validation mixes the definition level with the concrete-instance level.
 
-**Pattern:** `PackageInstance` contains `SelectedInstance` but for validation reduces them to `SelectedProduct`
-and checks conformance with `PackageType`.
+**Pattern:** `ProductInstance` and `PackageInstance` implement `Instance`. A package contains `SelectedInstance`
+values but reduces them to `SelectedProduct` and checks conformance with `PackageType`.
 
 **Example:** a real logistics package contains a specific shipment, a specific policy, and a specific tracking
 configuration. Validation, however, checks whether their types match the package definition.
@@ -560,14 +582,17 @@ The following set of concepts is the practical core of the Product archetype:
 
 | Concept                   | Responsibility                | Example                          |
 | ------------------------- | ----------------------------- | -------------------------------- |
+| `Product`                 | Shared definition contract    | product type or package type     |
 | `ProductType`             | Product definition            | Savings deposit                  |
+| `Instance`                | Shared realisation contract   | product or package instance      |
 | `ProductInstance`         | Concrete occurrence           | Customer deposit agreement       |
 | `ProductIdentifier`       | Product type identification   | GTIN, ISBN, UUID                 |
 | `SerialNumber`            | Specimen identification       | VIN, IMEI, contract number       |
-| `BatchId`                 | Batch identification          | LOT-2024-001                     |
+| `BatchId` / `BatchName`   | Batch identity and label      | UUID / LOT-2024-001              |
 | `Quantity` / `Unit`       | Quantity and unit             | 100 litres, 12 months            |
 | `ProductFeatureType`      | Feature definition            | deposit term                     |
 | `ProductFeatureInstance`  | Feature value                 | 12 months                        |
+| `ProductFeatureInstances` | Complete feature configuration | amount + term                    |
 | `FeatureValueConstraint`  | Value validity rule           | range 1–60                       |
 | `ProductMetadata`         | Definitional property         | currency EUR                     |
 | `CatalogEntry`            | How the product is listed     | campaign "Deposit 7.5% Online"   |
@@ -578,6 +603,7 @@ The following set of concepts is the practical core of the Product archetype:
 | `ProductSet`              | Group of options in a package | insurance options to choose from |
 | `SelectionRule`           | Selection rule for groups     | exactly one                      |
 | `PackageInstance`         | Concrete realised package     | selected transport + policy      |
+| `SelectedInstance` / `SelectedProduct` | Instance- and type-level selection | shipment + quantity      |
 
 ## Heuristics for recognising a product
 
@@ -609,7 +635,7 @@ Something is worth treating as a product if it:
 1. Name the products, even if the company talks about services, procedures, instalments, or tariffs.
 2. Separate definition from instance.
 3. Add identifiers, units of measure, and a tracking strategy.
-4. Extract features into `ProductFeatureType` and `ProductFeatureInstance`.
+4. Extract features into `ProductFeatureType` and validate their values through `ProductFeatureInstances`.
 5. Separate metadata, features, and default values.
 6. Separate `ProductType` from `CatalogEntry`.
 7. Model relationships as independent entities.
@@ -852,6 +878,15 @@ ProductFeatureType comment =
 ```
 
 ```java
+ProductFeatureInstances depositFeatures = ProductFeatureInstances.of(
+    new ProductFeatureInstance(currency, "PLN"),
+    new ProductFeatureInstance(amount, BigDecimal.valueOf(10000))
+);
+
+depositFeatures.validateAgainst(depositType.featureTypes());
+```
+
+```java
 class ProductType {
 
     private final ProductIdentifier id;
@@ -1035,6 +1070,14 @@ CatalogEntry onlineDeposit =
             "channel", "online"
         ))
         .build();
+```
+
+```java
+productFacade.handle(new DefineProductType(/* ... */));
+productFacade.findBy(new FindByFeatureCriteria(/* ... */));
+
+productCatalog.handle(new AddToOffer(/* ... */));
+productCatalog.findBy(new FindAvailableAtCriteria(/* ... */));
 ```
 
 ### Relationships between products
@@ -1242,6 +1285,17 @@ class PackageType implements Product {
 ```
 
 ```java
+ProductType productType = Product.builder(id, name, description)
+    .asProductType(Unit.pieces(), ProductTrackingStrategy.INDIVIDUALLY_TRACKED)
+    .build();
+
+PackageType packageType = Product.builder(packageId, packageName, packageDescription)
+    .asPackage()
+    .withSingleChoice("Insurance", standardInsurance, premiumInsurance)
+    .build();
+```
+
+```java
 class PackageStructure {
 
     // what is included
@@ -1296,6 +1350,18 @@ interface SelectionRule {
     static SelectionRule ifThen(SelectionRule condition, SelectionRule... thenRules) {
         return new ConditionalRule(condition, Arrays.asList(thenRules));
     }
+
+    static SelectionRule and(SelectionRule... rules) {
+        return new AndRule(Arrays.asList(rules));
+    }
+
+    static SelectionRule or(SelectionRule... rules) {
+        return new OrRule(Arrays.asList(rules));
+    }
+
+    static SelectionRule not(SelectionRule rule) {
+        return new NotRule(rule);
+    }
 }
 
 record IsSubsetOf(ProductSet sourceSet, int min, int max) implements SelectionRule {
@@ -1346,7 +1412,7 @@ SelectionRule businessRule = SelectionRule.ifThen(
 );
 ```
 
-### PackageInstance and transitioning from instances to definitions
+### Shared Instance and transitioning from instances to definitions
 
 ```java
 interface Instance {
@@ -1359,7 +1425,7 @@ interface Instance {
 
     Optional<BatchId> batchId();
 
-    default InstanceBuilder builder(InstanceId id) {
+    static InstanceBuilder builder(InstanceId id) {
         return new InstanceBuilder(id);
     }
 }
@@ -1376,6 +1442,15 @@ record SelectedInstance(Instance instance, int quantity) {
 ```
 
 ```java
+class ProductInstance implements Instance {
+    private final InstanceId id;
+    private final ProductType productType;
+    private final SerialNumber serialNumber;
+    private final BatchId batchId;
+    private final Quantity quantity;
+    private final ProductFeatureInstances features;
+}
+
 class PackageInstance implements Instance {
 
     private final InstanceId id;
